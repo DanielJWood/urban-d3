@@ -1,0 +1,303 @@
+---
+layout: default
+---
+<!DOCTYPE html>
+<link rel="stylesheet" type="text/css" href="../css/fonts.css">
+<style type="text/css">
+  .dot {
+    cursor: pointer;
+    fill: white;
+    stroke: rgb(119,173,191);
+    stroke-width: 2px;    
+  }
+
+  .dot.active {
+    fill: rgb(119,173,191)
+  }
+
+  .grid line {
+    stroke: #e2e2e2;
+    stroke-width:1.5px;
+  }
+  .domain {
+    display: none;
+  }
+  .tick text {
+    font-family: "Avenir LT W02 65 Medium";
+  }
+
+  div.tooltip { 
+    position: absolute;     
+    text-align: center;     
+    width: 188px;          
+    height: 100px;         
+    padding: 2px;       
+    font: 12px sans-serif;    
+    background: #f5f5f5; 
+    border: 2px solid #e2e2e2;    
+    border-radius: 5px;     
+    pointer-events: none;  
+    -webkit-box-shadow: 0px 3px 10px 0px rgba(0,0,0,0.25);
+    -moz-box-shadow: 0px 3px 10px 0px rgba(0,0,0,0.25);
+    box-shadow: 0px 3px 10px 0px rgba(0,0,0,0.25);   
+    font-family: "Avenir LT W02 65 Medium";
+  }
+
+  div.mergeButton { 
+    position: absolute;     
+    text-align: center;     
+    width: 100px;          
+    /*height: 30px;         */
+    padding: 5px;       
+    font: 12px sans-serif;    
+    background: #f5f5f5; 
+    border: 2px solid #e2e2e2;    
+    border-radius: 5px;     
+    pointer-events: none;  
+    -webkit-box-shadow: 0px 3px 10px 0px rgba(0,0,0,0.25);
+    -moz-box-shadow: 0px 3px 10px 0px rgba(0,0,0,0.25);
+    box-shadow: 0px 3px 10px 0px rgba(0,0,0,0.25);   
+    font-family: "Avenir LT W02 65 Medium";    
+  }
+
+  div.mergeButton:hover {
+    border: 10px solid #e2e2e2;    
+  }
+
+</style>
+
+<svg width="960" height="500"></svg>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script>
+
+var svg = d3.select("svg"),
+    margin = {top: 20, right: 20, bottom: 30, left: 50},
+    width = +svg.attr("width") - margin.left - margin.right,
+    height = +svg.attr("height") - margin.top - margin.bottom;
+
+
+var x = d3.scaleLinear()
+    .rangeRound([0, width]);
+
+var y = d3.scaleLinear()
+    .rangeRound([height, 0]);
+
+var line = d3.line()
+    .x(function(d) { return x(d.income); })
+    .y(function(d) { return y(d.rate); });
+
+// var xAxis = d3.axisBottom(x);
+// var yAxis = d3.axisLeft(y);
+
+var gridlinesX = d3.axisBottom(x)
+  .tickFormat(d3.format("$,"))
+  .tickPadding(15)
+  .tickSize(-height);
+
+var gridlinesY = d3.axisLeft(y)
+  .tickFormat(d3.format(".0%"))
+  .tickPadding(15)
+  .tickSize(-width);        
+
+svg.append('rect')
+    .attr('class', 'chart-body')
+    .attr('fill', 'none')
+    .attr('pointer-events', 'all')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')')
+    .on('click',function() {
+      tooltip.html('this is a test')  
+      .style("opacity","0");
+    })
+
+var focus = svg.append("g")
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+// Define the div for the tooltip
+var tooltip = d3.select("body").append("div") 
+    .attr("class", "tooltip")       
+    .style("opacity", 0);
+
+d3.tsv("../data.tsv", function(d) {
+  d.income = +d.income;
+  d.rate = +d.rate;
+  return d;
+}, function(error, data) {
+  
+  // Add in an extra point to make it stepwise.
+  var dataLength = data.length;
+  for (var i = 0; i < dataLength - 1; i++) {
+    var temp = {income: data[i].income, rate: data[i+1].rate};
+    data.push(temp);
+  }
+
+  data.sort(function(a, b) { return d3.ascending(a.income, b.income) || d3.ascending(a.rate, b.rate);
+  })
+
+  for (var i = 0; i < data.length; i++) {
+    data[i].id = i;
+  }
+  
+  x.domain([0, d3.max(data, function(d) { return d.income; })]);
+  y.domain([0, d3.max(data, function(d) { return d.rate; })]);
+
+  let drag = d3.drag()
+    .on('start', dragstarted)
+    .on('drag', dragged)
+    .on('end', dragended);
+
+  focus.append("g")
+     .attr("class", "grid")
+     .attr('transform', 'translate(0,' + height + ')')
+     .call(gridlinesX);
+  focus.append('g')
+      .attr('class', 'grid')
+      .call(gridlinesY);
+  focus.selectAll(".tick>text")
+    .style("font-size","15px")
+    .style("fill", "#585858");
+
+
+
+  var taxLine = focus.append("path")
+    .datum(data)
+    .attr("id","tax")
+    .attr("fill", "none")
+    .attr("stroke", "rgb(119,173,191)")
+    .attr("stroke-linejoin", "round")
+    .attr("stroke-linecap", "round")
+    .attr("stroke-width", 3)
+    .attr("d", line);
+
+
+
+    // add an update function that is called everywhere whenever the thing is called
+  updateCircles(data, drag)
+
+  function dragged(d,i) {  
+    // don't let first dot be clicked
+    if (i != 0) {    
+      // UPDATE DATA
+      // make it so that x and y can't go beyond i+/-2 nodes  
+      if (x.invert(d3.event.x) >= data[i-2].income && data[i+2].income >= x.invert(d3.event.x)) {
+        d.income = x.invert(d3.event.x);  
+      } else if (x.invert(d3.event.x) < data[i-2].income) {
+        d.income = data[i-2].income;
+      } else {
+        d.income = data[i+2].income;
+      }
+
+      if (y.invert(d3.event.y) >= data[i-2].rate && data[i+2].rate >= y.invert(d3.event.y)) {
+        d.rate = y.invert(d3.event.y);  
+      } else if (y.invert(d3.event.y) < data[i-2].rate) {
+        d.rate = data[i-2].rate;
+      } else {
+        d.rate = data[i+2].rate;
+      }
+
+      // update the data of the +/- 1 node data
+      if ((i-1) & 1) {
+        // d3.select("#dot" + (i-1)).attr("cx", d3.event.x);
+        // d3.select("#dot" + (i+1)).attr("cy", d3.event.y);    
+        data[i-1].rate = d.rate;
+        data[i+1].income = d.income;         
+      } else {
+        data[i-1].income = d.income;
+        data[i+1].rate = d.rate;
+      }   
+
+      //Test for merge
+      // if i-1 = i-2
+      // if i = i - 1
+      // if i = i + 1
+      // if i + 1 = i + 2
+      // -2,-1,0,1      
+      for (var j = -2; j < 2; j++) {
+        if (data[i+j].income === data[i+j+1].income && data[i+j].rate === data[i+j+1].rate ) {
+          // only launch if on?
+          mergeCircles(data,i,j)
+        }
+        else {
+          // unbind mergecircle
+          d3.select(".MB" + (i+j)).remove()
+        }
+      }
+
+      // update the circles DOM
+      updateCircles(data,drag)
+      // update the line
+      taxLine.attr('d', line);
+    }        
+    // remove the tooltip
+    tooltip
+      .style("left", (x(d.income) + 80) + "px")   
+      .style("top", (y(d.rate) + 10) + "px")
+      .style("opacity","0");
+  } 
+
+});
+
+function mergeCircles(data,i,j) {
+  if (j === -1 || j === 0) {
+    // merge involves clicked dot
+  } else {    
+    // This is where we need to do a calculation of where to put it based on edges and other boxes. 
+    if (d3.select(".MB" + (i+j))._groups[0][0] === null) {
+      d3.select("body").append("div") 
+        .attr("class", "mergeButton MB" + (i+j) )
+        .style("opacity", 0.9)
+        .html("merge points?")
+        .style("left", (x(data[i+j].income) + 80) + "px")
+        .style("top", (y(data[i+j].rate) + 10) + "px");  
+    }        
+  }
+}
+
+function updateCircles(data, drag) {
+  var circles = focus.selectAll('circle')
+    .data(data)
+
+  circles.enter().append('circle')
+    .attr("class","dot")
+    // .attr("id", function(d) { return "dot" + d.id; })
+    .attr('r', 5.0)
+    .merge(circles)
+    .attr("id", function(d) { return "dot" + d.id; })
+    .attr('cx', function(d) { return x(d.income);  })
+    .attr('cy', function(d) { return y(d.rate);  })    
+    .on("mousedown", function(d) { 
+      // console.log('test')   
+      tooltip.transition()    
+        .duration(200)    
+        .style("opacity", .9);    
+      tooltip.html('this is a test')  
+        .style("left", x(d.income) + 80 + "px")   
+        .style("top", (y(d.rate) + 10) + "px");  
+      })  
+    .call(drag)
+}
+
+function dragstarted(d,i) {
+  d3.select(this)    
+  .transition()
+  .duration(100)
+      // .raise().classed('active', true)    
+    .attr("class","dot active")
+    .attr("r",8);    
+  
+}
+
+function dragended(d,i) {    
+  d3.select(this)  
+  .transition()
+  .duration(100)
+    .attr("class","dot")
+    .attr("r",5);
+
+  tooltip.html('this is a test')  
+      .style("opacity","0.9");
+}
+
+
+</script>
